@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WOLF LABS: Object Scanner</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- React & ReactDOM (Version 18) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (Compiles JSX in the browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        scanner: {
+                            dark: '#020617',      // Deep slate/black
+                            card: '#0f172a',      // Slate 900
+                            border: '#1e293b',    // Slate 800
+                            primary: '#8b5cf6',   // Violet 500
+                            accent: '#22d3ee'     // Neon Cyan
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-scanner-dark text-white overflow-hidden font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo } = React;
+
+        // --- DATA SOURCE: 25 EXERCISES (LEVEL A0 - LESSON 4: WHAT IS IT?) ---
+
+        const OBJECT_HUNT = [
+            { context: "An object you use to write on paper.", q: "What is it?", answer: "Pen", options: ["Pen", "Lamp", "Pillow", "Map"] },
+            { context: "An object with pages that you read.", q: "What is it?", answer: "Book", options: ["Book", "Pen", "Lamp", "Pillow"] },
+            { context: "An object that helps you find places and streets.", q: "What is it?", answer: "Map", options: ["Pillow", "Map", "Pen", "Lamp"] },
+            { context: "An object that gives light in a dark room.", q: "What is it?", answer: "Lamp", options: ["Map", "Book", "Lamp", "Pen"] },
+            { context: "A soft object you put your head on to sleep.", q: "What is it?", answer: "Pillow", options: ["Pillow", "Lamp", "Map", "Book"] }
+        ];
+
+        const IDENTITY_MATRIX = [
+            { context: "To ask the name of an unknown object.", q: "___ is it?", answer: "What", options: ["Where", "What", "Who", "How"] },
+            { context: "To state what an object is.", q: "___ is a pen.", answer: "It", options: ["I", "You", "He", "It"] },
+            { context: "To identify a single book.", q: "It is ___ book.", answer: "a", options: ["a", "an", "the", "two"] },
+            { context: "To correct a wrong identification.", q: "It is ___ a pen!", answer: "not", options: ["no", "not", "name", "now"] },
+            { context: "To answer 'What is it?' with a map.", q: "It ___ a map.", answer: "is", options: ["am", "are", "is", "be"] }
+        ];
+
+        const POSSESSION_PROTOCOL = [
+            { context: "To ask if someone owns a pen.", q: "___ you have a pen?", answer: "Do", options: ["Are", "Is", "Do", "Am"] },
+            { context: "To state that you own a book.", q: "I ___ a book.", answer: "have", options: ["has", "have", "am", "is"] },
+            { context: "To ask if someone owns a map.", q: "Do you ___ a map?", answer: "have", options: ["has", "have", "are", "do"] },
+            { context: "To ask about possession of a lamp.", q: "___ you have a lamp?", answer: "Do", options: ["Are", "Do", "Is", "Have"] },
+            { context: "To state your possession of a pillow.", q: "___ have a pillow.", answer: "I", options: ["He", "She", "I", "It"] }
+        ];
+
+        const COFFEE_SHOP_LOG = [
+            {
+                text: "Starting the interaction:\n- Hi! (1) ____ you (2) ____ a pen?",
+                blanks: [
+                    { id: 1, correct: "Do", options: ["Do", "Are"] },
+                    { id: 2, correct: "have", options: ["have", "has"] }
+                ]
+            },
+            {
+                text: "Finding the wrong object:\n- I have a... (1) ____ is a (2) ____.",
+                blanks: [
+                    { id: 1, correct: "it", options: ["it", "he"] },
+                    { id: 2, correct: "lamp", options: ["lamp", "you"] }
+                ]
+            },
+            {
+                text: "Correcting the mistake:\n- No, it is (1) ____ a (2) ____!",
+                blanks: [
+                    { id: 1, correct: "not", options: ["not", "no"] },
+                    { id: 2, correct: "pen", options: ["pen", "map"] }
+                ]
+            },
+            {
+                text: "Finding the right object:\n- Now I know! I (1) ____ a (2) ____!",
+                blanks: [
+                    { id: 1, correct: "have", options: ["have", "has"] },
+                    { id: 2, correct: "pen", options: ["pen", "pillow"] }
+                ]
+            },
+            {
+                text: "Closing the interaction:\n- Let's (1) ____ (2) ____!",
+                blanks: [
+                    { id: 1, correct: "get", options: ["get", "have"] },
+                    { id: 2, correct: "coffee", options: ["coffee", "lamp"] }
+                ]
+            }
+        ];
+
+        const VOCAL_MISSION = [
+            { title: "Ask for Identity", context: "Ask what an unknown object is.", starter: "What is it?" },
+            { title: "Identify the Object", context: "State that the object is a pen.", starter: "It is a pen." },
+            { title: "Ask for Possession", context: "Ask someone if they own a map.", starter: "Do you have a map?" },
+            { title: "State Possession", context: "Tell someone you own a book.", starter: "I have a book." },
+            { title: "Negative Correction", context: "State that the object is NOT a lamp.", starter: "It is not a lamp." }
+        ];
+
+        const LAB_DATA = [
+            { id: "ACT-01", title: "Object Scanner", icon: "fas fa-expand", description: "Scan and identify everyday objects (Pen, Map, Book).", tracks: OBJECT_HUNT, type: "decoder" },
+            { id: "ACT-02", title: "Identity Matrix", icon: "fas fa-fingerprint", description: "Master the structure 'What is it?' and 'It is a...'", tracks: IDENTITY_MATRIX, type: "decoder" },
+            { id: "ACT-03", title: "Possession Check", icon: "fas fa-box-open", description: "Learn how to ask and answer 'Do you have a...?'", tracks: POSSESSION_PROTOCOL, type: "decoder" },
+            { id: "ACT-04", title: "Coffee Shop Quest", icon: "fas fa-coffee", description: "Reconstruct the real-world object search dialogue.", tracks: COFFEE_SHOP_LOG, type: "cloze" },
+            { id: "ACT-05", title: "Vocal ID", icon: "fas fa-microphone-alt", description: "Use your voice to identify and ask for objects!", tracks: VOCAL_MISSION, type: "speaking" }
+        ];
+
+        // --- MAIN COMPONENT ---
+
+        function App() {
+            const [view, setView] = useState('home'); 
+            const [activeActIndex, setActiveActIndex] = useState(0);
+            const [currentStep, setCurrentStep] = useState(0);
+            const [score, setScore] = useState(0);
+            
+            const [selectedAnswer, setSelectedAnswer] = useState(null);
+            const [clozeSelections, setClozeSelections] = useState({});
+            const [isAnswerVerified, setIsAnswerVerified] = useState(false);
+            const [isRecording, setIsRecording] = useState(false);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [toast, setToast] = useState({ show: false, msg: '', type: 'success' });
+
+            const activeActivity = useMemo(() => LAB_DATA[activeActIndex], [activeActIndex]);
+            const currentTrack = useMemo(() => activeActivity?.tracks[currentStep], [activeActivity, currentStep]);
+
+            const showToast = (msg, type = 'success') => {
+                setToast({ show: true, msg, type });
+                setTimeout(() => setToast({ show: false, msg: '', type: 'success' }), 2500);
+            };
+
+            const startExercise = (index) => {
+                setActiveActIndex(index);
+                setCurrentStep(0);
+                resetState();
+                setView('exercise');
+            };
+
+            const resetState = () => {
+                setSelectedAnswer(null);
+                setClozeSelections({});
+                setIsAnswerVerified(false);
+                setIsRecording(false);
+                setIsProcessing(false);
+            };
+
+            const verifyAnswer = () => {
+                if (activeActivity.type === 'decoder') {
+                    if (selectedAnswer === currentTrack.answer) {
+                        setScore(s => s + 100);
+                        showToast("OBJECT IDENTIFIED! +100 XP", 'success');
+                        setIsAnswerVerified(true);
+                    } else {
+                        showToast("SCAN FAILED: TRY AGAIN.", 'error');
+                    }
+                } else if (activeActivity.type === 'cloze') {
+                    const isCorrect = currentTrack.blanks.every(b => clozeSelections[b.id] === b.correct);
+                    if (isCorrect) {
+                        setScore(s => s + 200);
+                        showToast("DIALOGUE SYNCED! +200 XP", 'success');
+                        setIsAnswerVerified(true);
+                    } else {
+                        showToast("SYNTAX ERROR IN RECORD.", 'error');
+                    }
+                } else {
+                    setIsProcessing(true);
+                    setTimeout(() => {
+                        setIsProcessing(false);
+                        setScore(s => s + 300);
+                        showToast("VOICE PRINT ACCEPTED! +300 XP", 'success');
+                        setIsAnswerVerified(true);
+                    }, 1500);
+                }
+            };
+
+            const nextStep = () => {
+                if (currentStep + 1 < activeActivity.tracks.length) {
+                    setCurrentStep(s => s + 1);
+                    resetState();
+                } else {
+                    setView('completion');
+                }
+            };
+
+            return (
+                <div className="min-h-screen font-sans bg-scanner-dark text-white selection:bg-scanner-primary/30">
+                    {/* HIGH-TECH SCANNER BACKGROUND */}
+                    <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+                        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-scanner-primary/10 blur-[180px] rounded-full"></div>
+                        <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-scanner-accent/10 blur-[150px] rounded-full"></div>
+                        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wMykiLz48L3N2Zz4=')] opacity-20"></div>
+                        
+                        {/* Scanning Laser Effect (Subtle) */}
+                        <div className="absolute w-full h-[2px] bg-scanner-primary/30 top-1/2 left-0 shadow-[0_0_20px_rgba(139,92,246,0.5)] animate-[pulse_4s_ease-in-out_infinite]"></div>
+                    </div>
+
+                    <div className="flex h-screen relative z-10">
+                        {/* SIDEBAR */}
+                        <aside className="w-72 bg-scanner-card/80 backdrop-blur-xl border-r border-scanner-border flex flex-col justify-between hidden md:flex h-full shadow-[5px_0_30px_rgba(0,0,0,0.5)] z-20">
+                            <div>
+                                <div className="p-8 border-b border-scanner-border">
+                                    <h1 className="text-3xl font-black tracking-tighter flex items-center gap-3 text-white">
+                                        <i className="fas fa-microchip text-scanner-primary"></i> WOLF LABS
+                                    </h1>
+                                    <p className="text-[10px] font-bold text-scanner-accent uppercase tracking-[0.2em] mt-2">Identification System</p>
+                                </div>
+                                <nav className="px-4 space-y-2 mt-6 text-left">
+                                    <button onClick={() => view !== 'home' && setView('home')} className={`w-full flex items-center gap-4 px-4 py-3 font-bold rounded-xl transition-all ${view === 'home' || view === 'completion' ? 'bg-scanner-primary/20 text-white border border-scanner-primary/30' : 'text-gray-500 hover:text-white hover:bg-white/5'}`}>
+                                        <i className={`fas fa-desktop ${view === 'home' ? "text-scanner-primary" : ""}`}></i>
+                                        Scanner Hub
+                                    </button>
+                                    <button className="w-full flex items-center gap-4 px-4 py-3 font-bold text-gray-500 hover:text-white rounded-xl hover:bg-white/5 transition-all">
+                                        <i className="fas fa-history"></i>
+                                        Scan History
+                                    </button>
+                                </nav>
+                            </div>
+                            <div className="p-4 border-t border-scanner-border">
+                                <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4 hover:border-scanner-primary/50 transition-all cursor-pointer">
+                                    <div className="w-10 h-10 rounded-full bg-scanner-primary flex items-center justify-center text-white font-black shadow-[0_0_15px_rgba(139,92,246,0.4)]">
+                                        <i className="fas fa-user-shield"></i>
+                                    </div>
+                                    <div className="flex-1 overflow-hidden text-left">
+                                        <p className="text-sm font-bold text-white truncate">Agent_A0</p>
+                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Lesson 04</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </aside>
+
+                        {/* MAIN AREA */}
+                        <main className="flex-1 flex flex-col bg-transparent relative overflow-hidden h-full">
+                            
+                            {/* HOME PAGE */}
+                            {view === 'home' && (
+                                <div className="flex-1 overflow-y-auto p-8 lg:p-12 animate-in fade-in duration-700">
+                                    <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-12 gap-6 text-left">
+                                        <div>
+                                            <p className="text-scanner-accent font-bold tracking-widest uppercase text-xs mb-3 flex items-center gap-2">
+                                                <i className="fas fa-circle text-[8px] animate-pulse"></i> PRE-A1 PROTOCOL ACTIVE
+                                            </p>
+                                            <h2 className="text-5xl md:text-6xl font-black tracking-tight text-white mb-4 drop-shadow-lg">Object Scanner</h2>
+                                            <p className="text-gray-400 text-lg max-w-2xl leading-relaxed">System initialized. Your mission: identify common objects, answer "What is it?", and ask about possession ("Do you have a...?").</p>
+                                        </div>
+                                        <div className="bg-scanner-card/50 backdrop-blur-md border border-scanner-border rounded-2xl px-8 py-6 text-center min-w-[180px] shadow-lg relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-full h-1 bg-scanner-primary"></div>
+                                            <p className="text-xs text-gray-500 uppercase tracking-[0.2em] mb-1 font-bold">XP Points</p>
+                                            <p className="text-4xl font-black text-white">{score}</p>
+                                        </div>
+                                    </header>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 pb-20">
+                                        {LAB_DATA.map((act, idx) => (
+                                            <div key={act.id} onClick={() => startExercise(idx)} className="group bg-scanner-card border border-scanner-border hover:border-scanner-primary/80 hover:-translate-y-2 rounded-3xl p-6 transition-all duration-300 cursor-pointer relative overflow-hidden flex flex-col justify-between min-h-[260px] shadow-lg">
+                                                <div className="absolute top-[-50px] right-[-50px] w-32 h-32 bg-scanner-primary/10 rounded-full blur-2xl group-hover:bg-scanner-primary/30 transition-all"></div>
+                                                <div className="relative z-10 text-left">
+                                                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-scanner-primary group-hover:bg-scanner-primary group-hover:text-white mb-6 transition-all text-xl shadow-md group-hover:shadow-[0_0_20px_rgba(139,92,246,0.6)]">
+                                                        <i className={act.icon}></i>
+                                                    </div>
+                                                    <h3 className="text-xl font-bold mb-2 text-white">{act.title}</h3>
+                                                    <p className="text-xs text-gray-400 leading-relaxed">{act.description}</p>
+                                                </div>
+                                                <div className="flex justify-between items-center text-[9px] font-bold text-gray-500 uppercase tracking-widest border-t border-scanner-border pt-4 mt-6">
+                                                    <span><i className="fas fa-layer-group mr-1"></i> {act.tracks.length} Scans</span>
+                                                    <span className="text-scanner-accent">A0 Level</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* EXERCISE SCREEN */}
+                            {view === 'exercise' && (
+                                <div className="flex-1 flex flex-col h-full animate-in fade-in duration-500">
+                                    <header className="p-6 border-b border-scanner-border bg-scanner-card/80 backdrop-blur-xl flex items-center justify-between z-20">
+                                        <div className="flex items-center gap-6 w-1/3 text-left">
+                                            <button onClick={() => setView('home')} className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:border-scanner-primary hover:bg-scanner-primary transition-all">
+                                                <i className="fas fa-arrow-left"></i>
+                                            </button>
+                                            <div className="hidden sm:block">
+                                                <p className="text-[10px] text-scanner-accent uppercase tracking-[0.2em] font-bold">{activeActivity.id}</p>
+                                                <p className="font-bold text-sm text-white">{activeActivity.title}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="w-1/3 flex flex-col items-center">
+                                            <div className="flex justify-between w-full max-w-[250px] text-[10px] text-gray-500 mb-2 font-bold uppercase tracking-widest">
+                                                <span>Target 0{currentStep + 1} of 0{activeActivity.tracks.length}</span>
+                                            </div>
+                                            <div className="w-full max-w-[250px] h-2 bg-white/5 rounded-full overflow-hidden">
+                                                <div className="h-full bg-scanner-primary transition-all duration-700 ease-out shadow-[0_0_10px_rgba(139,92,246,0.5)]" style={{ width: `${((currentStep + 1) / activeActivity.tracks.length) * 100}%` }}></div>
+                                            </div>
+                                        </div>
+
+                                        <div className="w-1/3 text-right">
+                                            <span className="bg-white/5 border border-white/10 px-4 py-2 rounded-full text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                                                XP: <span className="text-scanner-accent ml-1">{score}</span>
+                                            </span>
+                                        </div>
+                                    </header>
+
+                                    <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6 pb-40 relative z-10">
+                                        <div className="w-full flex justify-center">
+                                            
+                                            {/* MULTIPLE CHOICE */}
+                                            {activeActivity.type === 'decoder' && (
+                                                <div className="w-full max-w-4xl flex flex-col items-center gap-10">
+                                                    <div className="flex flex-col md:flex-row gap-6 w-full">
+                                                        <div className="flex-1 bg-white/5 border border-white/10 rounded-3xl p-8 text-left relative overflow-hidden backdrop-blur-sm">
+                                                            <p className="text-scanner-accent font-bold text-[10px] uppercase mb-4 tracking-[0.2em] flex items-center gap-2"><i className="fas fa-radar"></i> Scanner Data</p>
+                                                            <h2 className="text-xl sm:text-2xl font-medium text-gray-300 leading-relaxed">{currentTrack.context}</h2>
+                                                        </div>
+                                                        <div className="flex-1 bg-scanner-card border border-scanner-border rounded-3xl p-8 text-left shadow-lg">
+                                                            <p className="text-gray-400 font-bold text-[10px] uppercase mb-4 tracking-[0.2em] flex items-center gap-2"><i className="fas fa-keyboard"></i> Target Phrase</p>
+                                                            <h2 className="text-2xl sm:text-3xl font-bold text-white leading-relaxed">
+                                                                {currentTrack.q.replace('___', selectedAnswer || '____')}
+                                                            </h2>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                                                        {currentTrack.options.map(opt => (
+                                                            <button key={opt} onClick={() => !isAnswerVerified && setSelectedAnswer(opt)} className={`p-6 rounded-2xl font-bold uppercase tracking-wider transition-all border-2 text-sm sm:text-base ${selectedAnswer === opt ? 'bg-scanner-primary border-scanner-primary text-white shadow-[0_0_20px_rgba(139,92,246,0.4)]' : 'bg-black/50 border-white/10 text-gray-300 hover:text-white hover:border-scanner-primary/50'}`}>
+                                                                {opt}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* FILL IN THE BLANKS (CLOZE) */}
+                                            {activeActivity.type === 'cloze' && (
+                                                <div className="w-full max-w-4xl bg-scanner-card border border-scanner-border rounded-3xl p-10 shadow-2xl text-left relative overflow-hidden">
+                                                    <div className="absolute top-0 right-0 w-64 h-64 bg-scanner-primary/5 rounded-full blur-3xl"></div>
+                                                    <p className="text-scanner-accent font-bold text-[10px] uppercase mb-8 tracking-[0.2em] flex items-center gap-2"><i className="fas fa-exchange-alt"></i> Interaction Log</p>
+                                                    
+                                                    <p className="text-gray-400 mb-8 text-sm sm:text-base italic">{currentTrack.text.split('\n')[0]}</p>
+                                                    
+                                                    <div className="text-2xl sm:text-4xl font-bold leading-[3.5rem] sm:leading-[5rem] text-white">
+                                                        {currentTrack.text.split('\n').slice(1).join('\n').split(/(\(\d\)\s____)/).map((part, i) => {
+                                                            const match = part.match(/\((\d)\)\s____/);
+                                                            if (match) {
+                                                                const blankId = parseInt(match[1]);
+                                                                const blank = currentTrack.blanks.find(b => b.id === blankId);
+                                                                return (
+                                                                    <span key={i} className="inline-flex mx-3 relative group">
+                                                                        <select value={clozeSelections[blankId] || ""} onChange={(e) => setClozeSelections({...clozeSelections, [blankId]: e.target.value})} disabled={isAnswerVerified} className={`appearance-none bg-scanner-dark border-b-4 px-4 sm:px-6 py-2 rounded-lg focus:outline-none transition-all font-black text-xl sm:text-3xl cursor-pointer ${clozeSelections[blankId] ? 'border-scanner-primary text-scanner-primary bg-scanner-primary/10' : 'border-gray-600 text-gray-400 hover:border-gray-300'}`}>
+                                                                            <option value="" disabled>---</option>
+                                                                            {blank.options.map(o => <option key={o} value={o}>{o}</option>)}
+                                                                        </select>
+                                                                        <i className="fas fa-chevron-down absolute right-3 top-1/2 transform -translate-y-1/2 text-xs text-gray-500 pointer-events-none"></i>
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return <span key={i}>{part}</span>;
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* VOCAL PRACTICE */}
+                                            {activeActivity.type === 'speaking' && (
+                                                <div className="w-full max-w-3xl flex flex-col items-center">
+                                                    <div className="w-full bg-scanner-card border border-scanner-border rounded-3xl p-8 sm:p-12 mb-10 text-center shadow-2xl relative overflow-hidden">
+                                                        <div className="absolute top-[-50px] left-[-50px] w-40 h-40 bg-scanner-primary/10 rounded-full blur-3xl"></div>
+                                                        <p className="text-[10px] text-scanner-accent uppercase font-bold mb-6 tracking-[0.2em] flex items-center justify-center gap-2"><i className="fas fa-wave-square"></i> {currentTrack.title}</p>
+                                                        <h2 className="text-xl sm:text-2xl font-medium text-gray-300 mb-10 leading-relaxed text-left">{currentTrack.context}</h2>
+                                                        <div className="bg-black/40 p-6 sm:p-8 rounded-2xl border border-white/5 text-left w-full border-l-4 border-l-scanner-primary">
+                                                            <p className="text-[10px] text-gray-500 uppercase font-bold mb-3 tracking-widest">Say it out loud:</p>
+                                                            <p className="text-2xl sm:text-4xl font-black text-white italic leading-snug">"{currentTrack.starter}"</p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-center gap-6">
+                                                        <button onClick={() => !isAnswerVerified && setIsRecording(!isRecording)} className={`w-28 h-28 sm:w-32 sm:h-32 rounded-full flex items-center justify-center transition-all duration-300 ${isRecording ? 'bg-red-500 animate-pulse shadow-[0_0_50px_rgba(239,68,68,0.5)] scale-110 text-white' : isAnswerVerified ? 'bg-scanner-primary text-white shadow-[0_0_30px_rgba(139,92,246,0.4)]' : 'bg-scanner-dark border-4 border-scanner-primary text-scanner-primary hover:scale-105 hover:bg-scanner-primary/10'} text-4xl sm:text-5xl`}>
+                                                            {isProcessing ? <i className="fas fa-circle-notch fa-spin"></i> : isAnswerVerified ? <i className="fas fa-check"></i> : <i className="fas fa-microphone"></i>}
+                                                        </button>
+                                                        <p className={`text-[10px] sm:text-xs font-bold tracking-[0.2em] uppercase ${isRecording ? 'text-red-400' : 'text-gray-500'}`}>{isRecording ? 'Initializing Mic...' : isProcessing ? 'Analyzing Audio...' : isAnswerVerified ? 'Voice Verified' : 'Tap to Speak'}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* BOTTOM ACTION BAR */}
+                                    <div className="absolute bottom-0 w-full p-6 sm:p-8 bg-gradient-to-t from-[#020617] via-[#020617] to-transparent flex justify-center pb-8 sm:pb-12 z-40">
+                                        {!isAnswerVerified ? (
+                                            <button onClick={verifyAnswer} disabled={(!selectedAnswer && Object.keys(clozeSelections).length === 0 && !isRecording) || isProcessing} className="w-full max-w-lg py-5 sm:py-6 rounded-full bg-scanner-primary text-white font-black uppercase tracking-[0.2em] text-sm sm:text-base flex items-center justify-center gap-3 transition-all hover:bg-[#a78bfa] disabled:opacity-30 disabled:hover:bg-scanner-primary shadow-[0_10px_30px_rgba(139,92,246,0.2)] hover:scale-[1.02] hover:shadow-[0_10px_40px_rgba(139,92,246,0.4)]">
+                                                Verify Target <i className="fas fa-crosshairs"></i>
+                                            </button>
+                                        ) : (
+                                            <button onClick={nextStep} className="w-full max-w-lg py-5 sm:py-6 rounded-full bg-white text-scanner-dark font-black uppercase tracking-[0.2em] text-sm sm:text-base flex items-center justify-center gap-3 transition-all hover:bg-gray-200 hover:scale-[1.02] shadow-[0_10px_30px_rgba(255,255,255,0.2)]">
+                                                Next Target <i className="fas fa-forward"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* COMPLETION SCREEN */}
+                            {view === 'completion' && (
+                                <div className="flex-1 flex flex-col items-center justify-center relative p-6 text-center animate-in zoom-in-95 duration-700">
+                                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(139,92,246,0.15)_0%,transparent_70%)] pointer-events-none"></div>
+                                    <div className="relative z-10 max-w-2xl w-full">
+                                        <div className="w-24 h-24 sm:w-32 sm:h-32 mx-auto rounded-full bg-scanner-primary/20 border-4 border-scanner-primary flex items-center justify-center mb-8 sm:mb-10 shadow-[0_0_50px_rgba(139,92,246,0.5)] text-4xl sm:text-6xl text-scanner-primary">
+                                            <i className="fas fa-fingerprint"></i>
+                                        </div>
+                                        <h1 className="text-4xl sm:text-6xl font-black mb-4 sm:mb-6 tracking-tighter uppercase text-white drop-shadow-lg">Scan Complete!</h1>
+                                        <p className="text-lg sm:text-2xl text-gray-400 mb-10 sm:mb-12 max-w-xl mx-auto leading-relaxed">System optimized. You now master identifying objects and asking for possession using "What is it?" and "Do you have a...?".</p>
+                                        <div className="bg-scanner-card border border-scanner-border rounded-3xl p-8 sm:p-10 mb-10 sm:mb-12 flex justify-around shadow-2xl relative overflow-hidden">
+                                            <div className="absolute top-0 left-0 w-1 h-full bg-scanner-primary"></div>
+                                            <div className="text-center">
+                                                <p className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-[0.2em] mb-2 sm:mb-3 font-bold">Total XP</p>
+                                                <p className="text-4xl sm:text-5xl font-black text-scanner-primary">+{score}</p>
+                                            </div>
+                                            <div className="w-px bg-scanner-border"></div>
+                                            <div className="text-center">
+                                                <p className="text-[10px] sm:text-xs text-gray-500 uppercase tracking-[0.2em] mb-2 sm:mb-3 font-bold">Level Achieved</p>
+                                                <p className="text-4xl sm:text-5xl font-black text-white">Pre-A1</p>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setView('home')} className="w-full sm:w-auto px-12 py-5 sm:py-6 rounded-full bg-white/5 text-white font-black uppercase tracking-[0.2em] text-sm sm:text-base hover:bg-scanner-primary hover:text-white transition-all border border-white/10 hover:border-scanner-primary hover:shadow-[0_0_30px_rgba(139,92,246,0.3)]">Return to Scanner Hub</button>
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+
+                    {/* TOAST NOTIFICATIONS */}
+                    <div className={`fixed top-8 left-1/2 transform -translate-x-1/2 px-6 sm:px-10 py-4 sm:py-5 rounded-2xl sm:rounded-3xl font-bold shadow-[0_10px_40px_rgba(0,0,0,0.8)] transition-all duration-300 z-[100] flex items-center gap-3 sm:gap-4 border ${toast.show ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10 pointer-events-none'} ${toast.type === 'success' ? 'bg-scanner-card text-white border-scanner-primary' : 'bg-red-900 text-white border-red-500'}`}>
+                        {toast.type === 'success' ? <i className="fas fa-check-circle text-scanner-accent text-xl sm:text-2xl"></i> : <i className="fas fa-exclamation-triangle text-red-400 text-xl sm:text-2xl"></i>}
+                        <span className="text-sm sm:text-lg uppercase tracking-[0.1em] sm:tracking-widest font-black">{toast.msg}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
